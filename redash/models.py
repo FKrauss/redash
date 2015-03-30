@@ -12,7 +12,8 @@ from passlib.apps import custom_app_context as pwd_context
 from playhouse.postgres_ext import ArrayField, DateTimeTZField, PostgresqlExtDatabase
 from flask.ext.login import UserMixin, AnonymousUserMixin
 
-from redash import utils, settings
+from redash import utils, settings, redis_connection
+from redash.query_runner import get_query_runner
 
 
 class Database(object):
@@ -239,6 +240,23 @@ class DataSource(BaseModel):
             'name': self.name,
             'type': self.type
         }
+
+    def get_schema(self, refresh=False):
+        key = "data_source:schema:{}".format(self.id)
+
+        cache = None
+        if not refresh:
+            cache = redis_connection.get(key)
+
+        if cache is None:
+            query_runner = get_query_runner(self.type, self.options)
+            schema = query_runner.get_schema()
+
+            redis_connection.set(key, json.dumps(schema))
+        else:
+            schema = json.loads(cache)
+
+        return schema
 
     @classmethod
     def all(cls):
